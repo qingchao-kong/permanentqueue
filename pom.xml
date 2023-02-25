@@ -9,8 +9,8 @@
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
     <name>Kafka-LogManager</name>
-    <url>https://github.com/qingchao-kong/LogManager</url>
-    <description>Java port of the Apache Kafka LogManager.</description>
+    <url>https://github.com/qingchao-kong/permanentqueue</url>
+    <description>Permanent queue based on Kafka LogManager.</description>
 
     <licenses>
         <license>
@@ -21,26 +21,26 @@
     </licenses>
 
     <scm>
-        <url>https://github.com/qingchao-kong/LogManager</url>
-        <connection>scm:git:git@github.com:qingchao-kong/LogManager.git</connection>
-        <developerConnection>scm:git:git@github.com:qingchao-kong/LogManager.git</developerConnection>
+        <url>https://github.com/qingchao-kong/permanentqueue</url>
+        <connection>scm:git:git@github.com:qingchao-kong/permanentqueue.git</connection>
+        <developerConnection>scm:git:git@github.com:qingchao-kong/permanentqueue.git</developerConnection>
         <tag>HEAD</tag>
     </scm>
 
     <issueManagement>
         <system>GitHub Issues</system>
-        <url>https://github.com/qingchao-kong/LogManager/issues</url>
+        <url>https://github.com/qingchao-kong/permanentqueue/issues</url>
     </issueManagement>
 
     <ciManagement>
         <system>Travis CI</system>
-        <url>https://travis-ci.org/qingchao-kong/LogManager</url>
+        <url>https://travis-ci.org/qingchao-kong/permanentqueue</url>
     </ciManagement>
 
     <distributionManagement>
         <site>
-            <id>LogManager</id>
-            <url>http://qingchao-kong.github.io/LogManager/${project.version}</url>
+            <id>permanentqueue</id>
+            <url>http://qingchao-kong.github.io/permanentqueue/${project.version}</url>
         </site>
     </distributionManagement>
 
@@ -55,12 +55,6 @@
     </properties>
 
     <dependencies>
-        <!--        <dependency>-->
-        <!--            <groupId>net.jpountz.lz4</groupId>-->
-        <!--            <artifactId>lz4</artifactId>-->
-        <!--            <version>1.8.0</version>-->
-        <!--        </dependency>-->
-
         <dependency>
             <groupId>org.xerial.snappy</groupId>
             <artifactId>snappy-java</artifactId>
