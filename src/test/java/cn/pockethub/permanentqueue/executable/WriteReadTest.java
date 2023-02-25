@@ -28,7 +28,7 @@ public class WriteReadTest {
                 .build();
         queueManager.startUp();
 
-        PermanentQueue queue = queueManager.getOrCreatePermanentQueue("test2");
+        PermanentQueue queue = queueManager.getOrCreatePermanentQueue("test");
         LOG.info("Initialized log at {}", queueManager.getLogDir());
 
         long offset = queue.write(null, "test".getBytes());

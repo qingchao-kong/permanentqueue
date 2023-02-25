@@ -1,8 +1,0 @@
-language: java
-sudo: false
-after_success:
-  - mvn clean test
-jdk:
-  - openjdk8
-  - oraclejdk8
-  - oraclejdk8

@@ -32,11 +32,6 @@
         <url>https://github.com/qingchao-kong/permanentqueue/issues</url>
     </issueManagement>
 
-    <ciManagement>
-        <system>Travis CI</system>
-        <url>https://travis-ci.org/qingchao-kong/permanentqueue</url>
-    </ciManagement>
-
     <distributionManagement>
         <site>
             <id>permanentqueue</id>
