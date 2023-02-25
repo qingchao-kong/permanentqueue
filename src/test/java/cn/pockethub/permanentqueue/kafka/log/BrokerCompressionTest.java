@@ -1,6 +1,6 @@
 package cn.pockethub.permanentqueue.kafka.log;
 
-import cn.pockethub.permanentqueue.kafka.TestUtils;
+import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
 import cn.pockethub.permanentqueue.kafka.message.CompressionCodec;
 import cn.pockethub.permanentqueue.kafka.server.BrokerTopicStats;
 import cn.pockethub.permanentqueue.kafka.server.FetchDataInfo;

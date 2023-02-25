@@ -1,7 +1,7 @@
 package cn.pockethub.permanentqueue.executable;
 
 import cn.pockethub.permanentqueue.*;
-import cn.pockethub.permanentqueue.kafka.TestUtils;
+import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
 import cn.pockethub.permanentqueue.kafka.log.CleanerConfig;
 import cn.pockethub.permanentqueue.kafka.log.LogConfig;
 import cn.pockethub.permanentqueue.kafka.metadata.MockConfigRepository;

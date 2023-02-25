@@ -1,6 +1,6 @@
 package cn.pockethub.permanentqueue.kafka.log;
 
-import cn.pockethub.permanentqueue.kafka.TestUtils;
+import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
 import cn.pockethub.permanentqueue.kafka.metadata.MockConfigRepository;
 import cn.pockethub.permanentqueue.kafka.server.*;
 import cn.pockethub.permanentqueue.kafka.server.checkpoints.OffsetCheckpointFile;

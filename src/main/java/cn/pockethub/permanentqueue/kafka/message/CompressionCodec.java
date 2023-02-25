@@ -62,10 +62,8 @@ public enum CompressionCodec {
                 return SnappyCompressionCodec;
             case "lz4":
                 return LZ4CompressionCodec;
-            case "uncompressed":
-                return UncompressedCodec;
-            case "producer":
-                return ProducerCompressionCodec;
+            case "zstd":
+                return ZStdCompressionCodec;
             default:
                 throw new UnknownCodecException(String.format("%s is an unknown compression codec", name));
         }

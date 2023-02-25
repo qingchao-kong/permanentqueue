@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package cn.pockethub.permanentqueue.kafka;
+package cn.pockethub.permanentqueue.kafka.utils;
 
 import cn.pockethub.permanentqueue.kafka.common.requests.ByteBufferChannel;
 import cn.pockethub.permanentqueue.kafka.log.CleanerConfig;

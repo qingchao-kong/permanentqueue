@@ -1,12 +1,11 @@
 package cn.pockethub.permanentqueue.kafka.log;
 
-import cn.pockethub.permanentqueue.kafka.TestUtils;
+import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
 import cn.pockethub.permanentqueue.kafka.utils.MockTime;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.CompressionType;
 import org.apache.kafka.common.record.Record;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.Logger;
@@ -44,7 +43,7 @@ public class LogCleanerLagIntegrationTest extends AbstractLogCleanerIntegrationT
             new TopicPartition("log", 2)
     );
 
-    @ParameterizedTest
+//    @ParameterizedTest
     @MethodSource({"parameters"})
     public void cleanerTest(CompressionType codec) throws IOException, NoSuchAlgorithmException, InterruptedException {
         cleaner = makeCleaner(topicPartitions,

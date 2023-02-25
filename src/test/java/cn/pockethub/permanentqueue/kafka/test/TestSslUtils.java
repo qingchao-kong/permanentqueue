@@ -16,7 +16,7 @@
  */
 package cn.pockethub.permanentqueue.kafka.test;
 
-import cn.pockethub.permanentqueue.kafka.TestUtils;
+import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
 import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.network.Mode;

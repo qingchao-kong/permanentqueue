@@ -1,7 +1,6 @@
 package cn.pockethub.permanentqueue.other;
 
-import cn.pockethub.permanentqueue.executable.StressTest;
-import cn.pockethub.permanentqueue.kafka.TestUtils;
+import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
 import cn.pockethub.permanentqueue.kafka.log.LogAppendInfo;
 import cn.pockethub.permanentqueue.kafka.log.LogConfig;
 import cn.pockethub.permanentqueue.kafka.log.LogManager;
