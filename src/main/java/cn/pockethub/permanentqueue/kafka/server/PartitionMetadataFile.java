@@ -122,10 +122,10 @@ public class PartitionMetadataFile {
         }
     }
 
-    class PartitionMetadataReadBuffer {
+    static class PartitionMetadataReadBuffer {
 
-        private String location;
-        private BufferedReader reader;
+        private final String location;
+        private final BufferedReader reader;
 
         public PartitionMetadataReadBuffer(String location, BufferedReader reader) {
             this.location = location;

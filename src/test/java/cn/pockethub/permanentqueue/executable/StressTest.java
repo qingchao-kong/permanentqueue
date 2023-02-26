@@ -124,6 +124,7 @@ public class StressTest {
                     Utils.require(readEntry.getOffset() == offset,
                             "We should either read nothing or the message we asked for.");
                     offset += 1;
+                    queue.markQueueOffsetCommitted(readEntry.getOffset());
                 }
             } catch (OffsetOutOfRangeException e) {
                 // this is okay
