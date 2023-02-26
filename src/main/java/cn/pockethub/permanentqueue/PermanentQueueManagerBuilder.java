@@ -125,7 +125,7 @@ public class PermanentQueueManagerBuilder {
 
     public PermanentQueueManager build() throws Throwable {
         if (logDir == null) {
-            throw new RuntimeException("you must set logDirs");
+            throw new RuntimeException("you must set logDir");
         }
         if (configRepository == null) {
             throw new RuntimeException("you must set configRepository");
