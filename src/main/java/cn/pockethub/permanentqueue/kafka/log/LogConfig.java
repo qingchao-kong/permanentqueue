@@ -392,9 +392,9 @@ public class LogConfig extends AbstractConfig {
     }
 
     public Integer initFileSize() {
-        if (preallocate)
+        if (preallocate) {
             return segmentSize;
-        else {
+        } else {
             return 0;
         }
     }

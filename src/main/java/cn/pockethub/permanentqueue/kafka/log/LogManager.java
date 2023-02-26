@@ -879,13 +879,16 @@ public class LogManager extends KafkaMetricsGroup {
                     abortAndPauseCleaning(topicPartition);
                 }
                 try {
-                    if (log.truncateTo(truncateOffset))
+                    if (log.truncateTo(truncateOffset)) {
                         affectedLogs.add(log);
-                    if (needToStopCleaner && !isFuture)
+                    }
+                    if (needToStopCleaner && !isFuture) {
                         maybeTruncateCleanerCheckpointToActiveSegmentBaseOffset(log, topicPartition);
+                    }
                 } finally {
-                    if (needToStopCleaner && !isFuture)
+                    if (needToStopCleaner && !isFuture) {
                         resumeCleaning(topicPartition);
+                    }
                 }
             }
         }
@@ -1188,10 +1191,11 @@ public class LogManager extends KafkaMetricsGroup {
                         }
                     }
 
-                    if (preferredLogDir != null)
+                    if (preferredLogDir != null) {
                         logDirs = Lists.newArrayList(new File(preferredLogDir));
-                    else
+                    } else {
                         logDirs = nextLogDirs();
+                    }
                 }
 
                 String logDirName = isFuture ? UnifiedLog.logFutureDirName(topicPartition) : UnifiedLog.logDirName(topicPartition);
@@ -1336,10 +1340,12 @@ public class LogManager extends KafkaMetricsGroup {
             UnifiedLog destLog = futureLogs.get(topicPartition);
 
             LOG.info("Attempting to replace current log {} with {} for {}", sourceLog, destLog, topicPartition);
-            if (sourceLog == null)
+            if (sourceLog == null) {
                 throw new KafkaStorageException("The current replica for " + topicPartition + " is offline");
-            if (destLog == null)
+            }
+            if (destLog == null) {
                 throw new KafkaStorageException("The future replica for " + topicPartition + " is offline");
+            }
 
             destLog.renameDir(UnifiedLog.logDirName(topicPartition), true);
             destLog.updateHighWatermark(sourceLog.highWatermark());
@@ -1646,8 +1652,9 @@ public class LogManager extends KafkaMetricsGroup {
                 long timeSinceLastFlush = time.milliseconds() - log.lastFlushTime();
                 LOG.debug("Checking if flush is needed on {} flush interval {} last flushed {} time since last flush: {}",
                         topicPartition.topic(), log.config().getFlushMs(), log.lastFlushTime(), timeSinceLastFlush);
-                if (timeSinceLastFlush >= log.config().getFlushMs())
+                if (timeSinceLastFlush >= log.config().getFlushMs()) {
                     log.flush(false);
+                }
             } catch (Throwable e) {
                 LOG.error("Error flushing topic {}", topicPartition.topic(), e);
             }

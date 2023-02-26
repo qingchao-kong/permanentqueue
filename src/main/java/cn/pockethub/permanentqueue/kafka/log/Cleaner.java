@@ -660,8 +660,9 @@ public class Cleaner {
                     }
                 }
 
-                if (batch.lastOffset() >= startOffset)
+                if (batch.lastOffset() >= startOffset) {
                     map.updateLatestOffset(batch.lastOffset());
+                }
             }
             int bytesRead = records.validBytes();
             position += bytesRead;

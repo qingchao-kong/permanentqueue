@@ -102,8 +102,9 @@ public class CheckpointFile<T> {
 
         List<T> read() throws IOException {
             String line = reader.readLine();
-            if (line == null)
+            if (line == null) {
                 return Collections.emptyList();
+            }
 
             int readVersion = toInt(line);
             if (readVersion != version) {

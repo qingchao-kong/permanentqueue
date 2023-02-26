@@ -73,8 +73,9 @@ public class TokenBucket implements MeasurableStat {
 
     @Override
     public double measure(final MetricConfig config, final long timeMs) {
-        if (config.quota() == null)
+        if (config.quota() == null) {
             return Long.MAX_VALUE;
+        }
         final double quota = config.quota().bound();
         final double burst = burst(config);
         refill(quota, burst, timeMs);
@@ -83,8 +84,9 @@ public class TokenBucket implements MeasurableStat {
 
     @Override
     public void record(final MetricConfig config, final double value, final long timeMs) {
-        if (config.quota() == null)
+        if (config.quota() == null) {
             return;
+        }
         final double quota = config.quota().bound();
         final double burst = burst(config);
         refill(quota, burst, timeMs);

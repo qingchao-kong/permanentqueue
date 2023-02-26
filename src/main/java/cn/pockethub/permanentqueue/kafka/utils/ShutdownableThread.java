@@ -65,8 +65,9 @@ public abstract class ShutdownableThread extends Thread {
                     interrupt();
                 }
                 return true;
-            } else
+            } else {
                 return false;
+            }
         }
     }
 

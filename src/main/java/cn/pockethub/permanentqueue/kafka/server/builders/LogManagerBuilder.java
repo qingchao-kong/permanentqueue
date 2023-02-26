@@ -144,31 +144,45 @@ public class LogManagerBuilder {
     }
 
     public LogManager build() throws IOException {
-        if (logDirs == null) throw new RuntimeException("you must set logDirs");
-        if (configRepository == null) throw new RuntimeException("you must set configRepository");
-        if (initialDefaultConfig == null) throw new RuntimeException("you must set initialDefaultConfig");
-        if (cleanerConfig == null) throw new RuntimeException("you must set cleanerConfig");
-        if (scheduler == null) throw new RuntimeException("you must set scheduler");
-        if (brokerTopicStats == null) throw new RuntimeException("you must set brokerTopicStats");
-        if (logDirFailureChannel == null) throw new RuntimeException("you must set logDirFailureChannel");
+        if (logDirs == null) {
+            throw new RuntimeException("you must set logDirs");
+        }
+        if (configRepository == null) {
+            throw new RuntimeException("you must set configRepository");
+        }
+        if (initialDefaultConfig == null) {
+            throw new RuntimeException("you must set initialDefaultConfig");
+        }
+        if (cleanerConfig == null) {
+            throw new RuntimeException("you must set cleanerConfig");
+        }
+        if (scheduler == null) {
+            throw new RuntimeException("you must set scheduler");
+        }
+        if (brokerTopicStats == null) {
+            throw new RuntimeException("you must set brokerTopicStats");
+        }
+        if (logDirFailureChannel == null) {
+            throw new RuntimeException("you must set logDirFailureChannel");
+        }
 
         return new LogManager(logDirs,
-                              initialOfflineDirs,
-                              configRepository,
-                              initialDefaultConfig,
-                              cleanerConfig,
-                              recoveryThreadsPerDataDir,
-                              flushCheckMs,
-                              flushRecoveryOffsetCheckpointMs,
-                              flushStartOffsetCheckpointMs,
-                              retentionCheckMs,
-                              maxTransactionTimeoutMs,
-                              maxPidExpirationMs,
-                              interBrokerProtocolVersion,
-                              scheduler,
-                              brokerTopicStats,
-                              logDirFailureChannel,
-                              time,
-                              keepPartitionMetadataFile);
+                initialOfflineDirs,
+                configRepository,
+                initialDefaultConfig,
+                cleanerConfig,
+                recoveryThreadsPerDataDir,
+                flushCheckMs,
+                flushRecoveryOffsetCheckpointMs,
+                flushStartOffsetCheckpointMs,
+                retentionCheckMs,
+                maxTransactionTimeoutMs,
+                maxPidExpirationMs,
+                interBrokerProtocolVersion,
+                scheduler,
+                brokerTopicStats,
+                logDirFailureChannel,
+                time,
+                keepPartitionMetadataFile);
     }
 }

@@ -42,7 +42,9 @@ public class ConfigSynonym {
     };
 
     private static int valueToInt(String input, int defaultValue, String what) {
-        if (input == null) return defaultValue;
+        if (input == null) {
+            return defaultValue;
+        }
         String trimmedInput = input.trim();
         if (trimmedInput.isEmpty()) {
             return defaultValue;

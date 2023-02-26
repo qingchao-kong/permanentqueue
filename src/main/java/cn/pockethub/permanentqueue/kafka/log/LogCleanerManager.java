@@ -720,9 +720,10 @@ public class LogCleanerManager extends KafkaMetricsGroup {
 
         if (checkpointDirtyOffset < logStartOffset) {
             // Don't bother with the warning if compact and delete are enabled.
-            if (!isCompactAndDelete(log))
+            if (!isCompactAndDelete(log)) {
                 LOG.warn("Resetting first dirty offset of {} to log start offset {} since the checkpointed offset {} is invalid.",
                         log.name(), logStartOffset, checkpointDirtyOffset);
+            }
             firstDirtyOffset = logStartOffset;
             forceUpdateCheckpoint = true;
         } else if (checkpointDirtyOffset > log.logEndOffset()) {

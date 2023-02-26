@@ -704,9 +704,9 @@ public class LogSegment extends Logging {
 
     private void delete(SupplierWithIOException<Boolean> delete, String fileType, File file, Boolean logIfMissing) throws IOException {
         try {
-            if (delete.get())
+            if (delete.get()) {
                 LOG.info("Deleted {} {}.", fileType, file.getAbsolutePath());
-            else if (logIfMissing) {
+            } else if (logIfMissing) {
                 LOG.info("Failed to delete {} {} because it does not exist.", fileType, file.getAbsolutePath());
             }
         } catch (IOException e) {

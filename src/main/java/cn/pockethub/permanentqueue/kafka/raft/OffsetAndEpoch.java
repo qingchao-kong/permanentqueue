@@ -27,12 +27,18 @@ public class OffsetAndEpoch implements Comparable<OffsetAndEpoch> {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         OffsetAndEpoch that = (OffsetAndEpoch) o;
 
-        if (offset != that.offset) return false;
+        if (offset != that.offset) {
+            return false;
+        }
         return epoch == that.epoch;
     }
 
@@ -53,8 +59,9 @@ public class OffsetAndEpoch implements Comparable<OffsetAndEpoch> {
 
     @Override
     public int compareTo(OffsetAndEpoch o) {
-        if (epoch == o.epoch)
+        if (epoch == o.epoch) {
             return Long.compare(offset, o.offset);
+        }
         return Integer.compare(epoch, o.epoch);
     }
 }
