@@ -15,8 +15,8 @@ Permanent Queue
 ## Status
 1. 第一步：将Kafka LogManager的Scala代码翻译为Java代码。已完成。
    1. 基于 Apache Kafka commit [trunk/e23c59d0](https://github.com/apache/kafka/commit/e23c59d0).
-2. 第二步：Read Offset管理。已完成。
-3. 第三步：完善单测。进行中。
+2. 第二步：持久化队列实现，已完成。
+3. 第三步：单测完善中。
 
 ## Usage
 
