@@ -29,11 +29,9 @@ public class StressTest {
 
         PermanentQueueManager queueManager = new PermanentQueueManagerBuilder()
                 .setLogDir(dir)
-                .setConfigRepository(new MockConfigRepository())
                 .setInitialDefaultConfig(new LogConfig())
                 .setCleanerConfig(new CleanerConfig())
                 .setScheduler(new KafkaScheduler(2))
-                .setBrokerTopicStats(new BrokerTopicStats())
                 .build();
         queueManager.startUp();
 

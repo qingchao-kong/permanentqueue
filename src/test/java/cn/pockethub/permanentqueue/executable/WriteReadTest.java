@@ -20,11 +20,9 @@ public class WriteReadTest {
     public static void main(String[] args) throws Throwable {
         PermanentQueueManager queueManager = new PermanentQueueManagerBuilder()
                 .setLogDir(new File("/tmp/permanentQueue-test"))
-                .setConfigRepository(new MockConfigRepository())
                 .setInitialDefaultConfig(new LogConfig())
                 .setCleanerConfig(new CleanerConfig())
                 .setScheduler(new KafkaScheduler(2))
-                .setBrokerTopicStats(new BrokerTopicStats())
                 .build();
         queueManager.startUp();
 
@@ -35,7 +33,7 @@ public class WriteReadTest {
         LOG.info("Wrote message offset={}", offset);
 
         List<Queue.ReadEntry> read = queue.read(null);
-        for (Queue.ReadEntry readEntry :read) {
+        for (Queue.ReadEntry readEntry : read) {
             LOG.info("Read message: \"{}\" (at {})", new String(readEntry.getPayload()), readEntry.getOffset());
             //commit
             queue.markQueueOffsetCommitted(readEntry.getOffset());

@@ -3,6 +3,7 @@ package cn.pockethub.permanentqueue;
 import cn.pockethub.permanentqueue.kafka.log.CleanerConfig;
 import cn.pockethub.permanentqueue.kafka.log.LogConfig;
 import cn.pockethub.permanentqueue.kafka.log.LogManager;
+import cn.pockethub.permanentqueue.kafka.metadata.MockConfigRepository;
 import cn.pockethub.permanentqueue.kafka.server.BrokerTopicStats;
 import cn.pockethub.permanentqueue.kafka.server.ConfigRepository;
 import cn.pockethub.permanentqueue.kafka.server.LogDirFailureChannel;
@@ -21,7 +22,7 @@ public class PermanentQueueManagerBuilder {
 
     private File logDir = null;
     private List<File> initialOfflineDirs = Collections.emptyList();
-    private ConfigRepository configRepository = null;
+    private final ConfigRepository configRepository = new MockConfigRepository();
     private LogConfig initialDefaultConfig = null;
     private CleanerConfig cleanerConfig = null;
     private int recoveryThreadsPerDataDir = 1;
@@ -33,7 +34,7 @@ public class PermanentQueueManagerBuilder {
     private int maxPidExpirationMs = 60000;
     private MetadataVersion interBrokerProtocolVersion = MetadataVersion.latest();
     private Scheduler scheduler = null;
-    private BrokerTopicStats brokerTopicStats = null;
+    private BrokerTopicStats brokerTopicStats = new BrokerTopicStats();
     private LogDirFailureChannel logDirFailureChannel = new LogDirFailureChannel(1);
     private Time time = Time.SYSTEM;
     private boolean keepPartitionMetadataFile = true;
@@ -45,11 +46,6 @@ public class PermanentQueueManagerBuilder {
 
     public PermanentQueueManagerBuilder setInitialOfflineDirs(List<File> initialOfflineDirs) {
         this.initialOfflineDirs = initialOfflineDirs;
-        return this;
-    }
-
-    public PermanentQueueManagerBuilder setConfigRepository(ConfigRepository configRepository) {
-        this.configRepository = configRepository;
         return this;
     }
 
@@ -105,11 +101,6 @@ public class PermanentQueueManagerBuilder {
 
     public PermanentQueueManagerBuilder setScheduler(Scheduler scheduler) {
         this.scheduler = scheduler;
-        return this;
-    }
-
-    public PermanentQueueManagerBuilder setBrokerTopicStats(BrokerTopicStats brokerTopicStats) {
-        this.brokerTopicStats = brokerTopicStats;
         return this;
     }
 
