@@ -6,6 +6,8 @@ Permanent Queue
 
 基于 [Apache Kafka](http://kafka.apache.org/) LogManager实现的 Java 本地持久化队列.
 
+https://zhuanlan.zhihu.com/p/609396573
+
 ## Background
 1. 对于数据处理系统，高峰期如果数据无法进行及时处理，背压传导，会导致整个链路阻塞；此时需要通过消息队列进行削峰填谷。
    1. 引入分布式消息队列，会导致整个系统复杂度提升；
