@@ -1,13 +1,8 @@
 package cn.pockethub.permanentqueue.executable;
 
 import cn.pockethub.permanentqueue.*;
-import cn.pockethub.permanentqueue.kafka.utils.TestUtils;
-import cn.pockethub.permanentqueue.kafka.log.CleanerConfig;
-import cn.pockethub.permanentqueue.kafka.log.LogConfig;
-import cn.pockethub.permanentqueue.kafka.metadata.MockConfigRepository;
-import cn.pockethub.permanentqueue.kafka.server.BrokerTopicStats;
-import cn.pockethub.permanentqueue.kafka.utils.KafkaScheduler;
 import org.apache.kafka.common.errors.OffsetOutOfRangeException;
+import org.junit.jupiter.api.Assertions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,23 +18,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class StressTest {
     private static final Logger LOG = LoggerFactory.getLogger(StressTest.class);
     private static final AtomicBoolean running = new AtomicBoolean(true);
+    private static final String topic = "test";
+    private static final String messagePrefix = "0123456789abcdefghijklmnopqrstuvwxyz,.':;/\\\"[]{}()-_=+`~!@#$%^&*，。/；：'、【】「」～·！@#¥%……&*（）中文验证_";
 
     public static void main(String[] args) throws Throwable {
-        final File dir = TestUtils.tempDir();
-
-        PermanentQueueManager queueManager = new PermanentQueueManagerBuilder()
-                .setLogDir(dir)
-                .setInitialDefaultConfig(new LogConfig())
-                .setCleanerConfig(new CleanerConfig())
-                .setScheduler(new KafkaScheduler(2))
-                .build();
+        PermanentQueueManager queueManager = new PermanentQueueManager();
         queueManager.startUp();
 
-        PermanentQueue queue = queueManager.getOrCreatePermanentQueue("StressTest");
-
-        final WriterThread writer = new WriterThread(queue);
+        final WriterThread writer = new WriterThread(queueManager);
         writer.start();
-        final ReaderThread reader = new ReaderThread(queue);
+        final ReaderThread reader = new ReaderThread(queueManager);
         reader.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -52,12 +40,11 @@ public class StressTest {
                 } catch (InterruptedException e) {
                     LOG.error(e.getMessage(), e);
                 }
-                Utils.rm(dir);
             }
         });
 
         while (running.get()) {
-            LOG.info(System.currentTimeMillis()+"Reader offset = {}, writer offset = {}", reader.offset, writer.offset);
+            LOG.info(System.currentTimeMillis() + "Reader offset = {}, writer offset = {}", reader.offset, writer.offset);
             try {
                 Thread.sleep(1000);
             } catch (InterruptedException e) {
@@ -84,18 +71,17 @@ public class StressTest {
     }
 
     private static class WriterThread extends WorkerThread {
-        private final PermanentQueue queue;
+        private final PermanentQueueManager queueManager;
         private volatile int offset = 0;
 
-        public WriterThread(final PermanentQueue queue) {
-            this.queue = queue;
+        public WriterThread(final PermanentQueueManager queueManager) {
+            this.queueManager = queueManager;
         }
 
         @Override
         public void work() {
             try {
-                long writeOffset = queue.write(null, String.valueOf(offset).getBytes(StandardCharsets.UTF_8));
-                Utils.require(writeOffset == offset);
+//                queueManager.write(topic, (messagePrefix + offset).getBytes(StandardCharsets.UTF_8));
                 offset += 1;
                 if (offset % 1000 == 0) {
                     Thread.sleep(500);
@@ -107,22 +93,21 @@ public class StressTest {
     }
 
     private static class ReaderThread extends WorkerThread {
-        private final PermanentQueue queue;
+        private final PermanentQueueManager queueManager;
         private volatile int offset = 0;
 
-        public ReaderThread(final PermanentQueue queue) {
-            this.queue = queue;
+        public ReaderThread(final PermanentQueueManager queueManager) {
+            this.queueManager = queueManager;
         }
 
         @Override
         public void work() {
             try {
-                List<Queue.ReadEntry> read = queue.read(null);
-                for (Queue.ReadEntry readEntry :read) {
-                    Utils.require(readEntry.getOffset() == offset,
-                            "We should either read nothing or the message we asked for.");
-                    offset += 1;
-                    queue.markQueueOffsetCommitted(readEntry.getOffset());
+                List<PermanentQueueManager.ReadEntry> readEntries = queueManager.read("test", 1000);
+                for (PermanentQueueManager.ReadEntry readEntry : readEntries) {
+                    String msg = new String(readEntry.getMessageBytes(), StandardCharsets.UTF_8);
+                    Assertions.assertTrue(msg.startsWith(messagePrefix));
+                    queueManager.commit(topic, readEntry.getOffset());
                 }
             } catch (OffsetOutOfRangeException e) {
                 // this is okay

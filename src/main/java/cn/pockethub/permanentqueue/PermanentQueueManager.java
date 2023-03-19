@@ -1,162 +1,243 @@
 package cn.pockethub.permanentqueue;
 
-import cn.pockethub.permanentqueue.kafka.log.LogConfig;
-import cn.pockethub.permanentqueue.kafka.log.LogManager;
-import cn.pockethub.permanentqueue.kafka.log.UnifiedLog;
-import com.google.common.collect.ImmutableList;
-import com.google.common.io.Files;
+import cn.pockethub.permanentqueue.rocketmq.broker.ConsumerOffsetManager;
 import com.google.common.util.concurrent.AbstractIdleService;
 import lombok.Getter;
-import org.apache.commons.collections4.MapUtils;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.common.TopicPartition;
+import org.apache.commons.lang3.concurrent.BasicThreadFactory;
+import org.apache.rocketmq.common.BrokerConfig;
+import org.apache.rocketmq.common.message.*;
+import org.apache.rocketmq.store.*;
+import org.apache.rocketmq.store.config.MessageStoreConfig;
+import org.apache.rocketmq.store.stats.BrokerStatsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.AccessDeniedException;
+import java.io.File;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
+@Getter
 public class PermanentQueueManager extends AbstractIdleService {
     private static final Logger LOG = LoggerFactory.getLogger(PermanentQueueManager.class);
 
-    public static final long DEFAULT_COMMITTED_OFFSET = Long.MIN_VALUE;
+    private static final SocketAddress bornHost = new InetSocketAddress("127.0.0.1", 8123);
+    private static final SocketAddress storeHost = bornHost;
 
-    private static final String newLine=System.getProperty("line.separator");
+    private final DefaultMessageStore messageStore;
+    private final ConsumerOffsetManager consumerOffsetManager;
+    private final QueueConfig queueConfig;
+    private final MessageStoreConfig messageStoreConfig;
+    private final ScheduledExecutorService scheduledExecutorService;
 
-    private LogManager logManager;
+    private volatile boolean shutdown = false;
 
-    private final ConcurrentMap<String, PermanentQueue> queueHolder = new ConcurrentHashMap<>();
-    private final Object createQueueLock = new Object();
+    public PermanentQueueManager() throws Throwable {
+        String baseDir = System.getProperty("java.io.tmpdir") + File.separator + "store-kqc";
 
-    @Getter
-    private final File logDir;
-    private final File committedReadOffsetFile;
+        MessageStoreConfig messageStoreConfig = new MessageStoreConfig();
+//        messageStoreConfig.setMappedFileSizeCommitLog(1024 * 8);
+//        messageStoreConfig.setMappedFileSizeConsumeQueue(100 * ConsumeQueue.CQ_STORE_UNIT_SIZE);
+//        messageStoreConfig.setMapperFileSizeBatchConsumeQueue(20 * BatchConsumeQueue.CQ_STORE_UNIT_SIZE);
+//        messageStoreConfig.setMappedFileSizeConsumeQueueExt(1024);
+//        messageStoreConfig.setMaxIndexNum(100 * 10);
+//        messageStoreConfig.setEnableConsumeQueueExt(true);
+        messageStoreConfig.setStorePathRootDir(baseDir);
+//        messageStoreConfig.setStorePathCommitLog(baseDir + File.separator + "commitlog");
+        messageStoreConfig.setHaListenPort(0);
+//        messageStoreConfig.setMaxTransferBytesOnMessageInDisk(1024 * 1024);
+//        messageStoreConfig.setMaxTransferBytesOnMessageInMemory(1024 * 1024);
+//        messageStoreConfig.setMaxTransferCountOnMessageInDisk(1024);
+//        messageStoreConfig.setMaxTransferCountOnMessageInMemory(1024);
 
-    private final OffsetFileFlusher offsetFlusher;
+//        messageStoreConfig.setFlushIntervalCommitLog(1);
+//        messageStoreConfig.setFlushCommitLogThoroughInterval(2);
 
-    @Getter
-    private volatile boolean shuttingDown;
+        this.messageStore = new DefaultMessageStore(
+                messageStoreConfig,
+                new BrokerStatsManager("simpleTest", true),
+                (topic, queueId, logicOffset, tagsCode, msgStoreTime, filterBitMap, properties) -> {
+                },
+                new BrokerConfig()
+        );
 
-    public PermanentQueueManager(LogManager logManager, File logDir) {
-        this.logManager = logManager;
-        this.logDir = logDir;
+        this.messageStoreConfig = messageStore.getMessageStoreConfig();
+        this.consumerOffsetManager = new ConsumerOffsetManager(this);
+        this.queueConfig = new QueueConfig();
 
-        committedReadOffsetFile = new File(logDir, "permanentqueue-committed-read-offset");
-        try {
-            committedReadOffsetFile.createNewFile();
-        } catch (IOException e) {
-            LOG.error("Cannot access offset file: {}", e.getMessage());
-            final AccessDeniedException accessDeniedException = new AccessDeniedException(committedReadOffsetFile.getAbsolutePath(), null, e.getMessage());
-            throw new RuntimeException(accessDeniedException);
-        }
-
-        //offset flusher
-        offsetFlusher = new OffsetFileFlusher();
+        this.scheduledExecutorService = new ScheduledThreadPoolExecutor(1,
+                new BasicThreadFactory.Builder()
+                        .namingPattern("PermanentQueueManagerScheduledThread")
+                        .daemon(true)
+                        .build()
+        );
     }
 
-    /**
-     * Start the background threads to flush logs and do log cleanup
-     */
     @Override
     public void startUp() throws Exception {
-        logManager.getScheduler().startup();
-        logManager.startup(new HashSet<>());
-        logManager.getScheduler().schedule("PermanentQueue-offset-flusher", offsetFlusher, 1, 1, TimeUnit.SECONDS);
+        LOG.info("---------------------------------------- PermanentQueueManager start up ----------------------------------------");
+        consumerOffsetManager.load();
+        messageStore.load();
+        messageStore.start();
+        initializeScheduledTasks();
+        Runtime.getRuntime().addShutdownHook(new Thread(buildShutdownHook(this)));
+        LOG.info("---------------------------------------- PermanentQueueManager start success ----------------------------------------");
     }
 
     @Override
-    public void shutDown() throws Exception {
-        LOG.debug("Shutting down PermanentQueueManager!");
-        shuttingDown = true;
+    public void shutDown() {
+        LOG.info("---------------------------------------- PermanentQueueManager shutdown ----------------------------------------");
+        shutdown = true;
+        if (Objects.nonNull(messageStore)) {
+            messageStore.flush();
+            messageStore.shutdown();
+        }
+        if (Objects.nonNull(consumerOffsetManager)) {
+            consumerOffsetManager.persist();
+        }
+
+        if (Objects.nonNull(scheduledExecutorService)) {
+            scheduledExecutorService.shutdown();
+        }
+        LOG.info("---------------------------------------- PermanentQueueManager shutdown success ----------------------------------------");
+    }
+
+    public boolean write(String topic, byte[] messageBytes) throws PermanentQueueException {
+        if (shutdown) {
+            throw new PermanentQueueException("PermanentQueueManager has shutdown!");
+        }
+
+        MessageExtBrokerInner msg = new MessageExtBrokerInner();
+        msg.setTopic(topic);
+        msg.setBody(messageBytes);
+        msg.setQueueId(0);
+        msg.setSysFlag(0);
+        msg.setBornTimestamp(System.currentTimeMillis());
+        msg.setStoreHost(storeHost);
+        msg.setBornHost(storeHost);
+        MessageAccessor.putProperty(msg, MessageConst.PROPERTY_INNER_NUM, String.valueOf(-1));
+        msg.setPropertiesString(MessageDecoder.messageProperties2String(msg.getProperties()));
+        MessageAccessor.clearProperty(msg, MessageConst.PROPERTY_INNER_NUM);
+
+        PutMessageResult putMessageResult = messageStore.putMessage(msg);
+        return putMessageResult.isOk();
+    }
+
+    public boolean write(String topic, List<byte[]> batchMessageBytes) throws PermanentQueueException {
+        if (shutdown) {
+            throw new PermanentQueueException("PermanentQueueManager has shutdown!");
+        }
+
+        List<Message> messages = new ArrayList<>();
+        for (byte[] messageBytes : batchMessageBytes) {
+            Message msg = new Message();
+            msg.setBody(messageBytes);
+            msg.setTopic(topic);
+//            msg.setTags("TAG1");
+//            msg.setKeys(String.valueOf(System.currentTimeMillis()));
+            messages.add(msg);
+        }
+        byte[] batchMessageBody = MessageDecoder.encodeMessages(messages);
+        MessageExtBatch messageExtBatch = new MessageExtBatch();
+        messageExtBatch.setTopic(topic);
+        messageExtBatch.setQueueId(0);
+        messageExtBatch.setBody(batchMessageBody);
+//        messageExtBatch.putUserProperty(batchPropK, batchPropV);
+        messageExtBatch.setBornTimestamp(System.currentTimeMillis());
+        messageExtBatch.setStoreHost(new InetSocketAddress("127.0.0.1", 125));
+        messageExtBatch.setBornHost(new InetSocketAddress("127.0.0.1", 126));
+
+        PutMessageResult putMessageResult = messageStore.putMessages(messageExtBatch);
+        return putMessageResult.isOk();
+    }
+
+    public List<ReadEntry> read(String topic, int maxMsgNums) throws PermanentQueueException {
+        if (shutdown) {
+            throw new PermanentQueueException("PermanentQueueManager has shutdown!");
+        }
+
+        long offset = consumerOffsetManager.queryOffset(topic, topic, 0);
+        long nextReadOffset = offset < 0 ? 0 : offset + 1;
+        GetMessageResult getMessageResult = messageStore.getMessage(topic, topic, 0, nextReadOffset, maxMsgNums, null);
+        List<ReadEntry> readEntries = new ArrayList<>(getMessageResult.getMessageCount());
+
         try {
-            logManager.shutdown();
+            for (SelectMappedBufferResult selectMappedBufferResult : getMessageResult.getMessageMapedList()) {
+                MessageExt messageExt = MessageDecoder.decode(selectMappedBufferResult.getByteBuffer());
+                readEntries.add(new ReadEntry(messageExt.getBody(), messageExt.getQueueOffset()));
+            }
         } catch (Throwable throwable) {
-            LOG.error("Shut donw PermanentQueueManager error", throwable);
+            LOG.error("Decode message error.", throwable);
+        } finally {
+            getMessageResult.release();
         }
-        try {
-            logManager.getScheduler().shutdown();
-        } catch (InterruptedException e) {
-            LOG.error("Shut down scheduler error", e);
-        }
-        // final flush
-        offsetFlusher.run();
+
+        return readEntries;
     }
 
-    public PermanentQueue getOrCreatePermanentQueue(String queueName) throws Throwable {
-        if (!queueHolder.containsKey(queueName)) {
-            synchronized (createQueueLock) {
-                if (!queueHolder.containsKey(queueName)) {
-                    UnifiedLog unifiedLog = logManager.getOrCreateLog(new TopicPartition(queueName, 0), Optional.empty());
-                    long committedOffset = DEFAULT_COMMITTED_OFFSET;
-                    long nextReadOffset = 0L;
-                    try {
-                        ImmutableList<String> lines = Files.asCharSource(committedReadOffsetFile, StandardCharsets.UTF_8).readLines();
-                        // the file contains the last offset has successfully processed.
-                        // thus the nextReadOffset is one beyond that number
-                        for (String line : lines) {
-                            if (StringUtils.isBlank(line)) {
-                                continue;
-                            }
-                            //queueName:offset
-                            String[] split = line.split(":");
-                            if (StringUtils.equals(split[0], queueName)) {
-                                committedOffset = Long.parseLong(split[1]);
-                                nextReadOffset = committedOffset + 1;
-                                break;
-                            }
-                        }
-                    } catch (IOException e) {
-                        LOG.error("Cannot access offset file: {}", e.getMessage());
-                        final AccessDeniedException accessDeniedException = new AccessDeniedException(committedReadOffsetFile.getAbsolutePath(), null, e.getMessage());
-                        throw new RuntimeException(accessDeniedException);
-                    }
-                    queueHolder.put(queueName, new PermanentQueue(queueName, this, unifiedLog, committedOffset, nextReadOffset));
-                }
-            }
+    public void commit(String topic, long offset) throws PermanentQueueException {
+        if (shutdown) {
+            throw new PermanentQueueException("PermanentQueueManager has shutdown!");
         }
-        return queueHolder.get(queueName);
+
+        consumerOffsetManager.commitOffset(null, topic, topic, 0, offset);
     }
 
-    public class OffsetFileFlusher implements Runnable {
-
-        @Override
-        public void run() {
-            // Do not write the file if committedOffset has never been updated.
-            Map<String,Long> committedOffsets=new TreeMap<>();
-            for (Map.Entry<String, PermanentQueue> entry : queueHolder.entrySet()) {
-                String queueName = entry.getKey();
-                PermanentQueue queue = entry.getValue();
-                if (queue.getCommittedOffset().get() != DEFAULT_COMMITTED_OFFSET) {
-                    committedOffsets.put(queueName, queue.getCommittedOffset().get());
+    private void initializeScheduledTasks() {
+        this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    PermanentQueueManager.this.consumerOffsetManager.persist();
+                } catch (Throwable e) {
+                    LOG.error("QueueManager: failed to persist config file of consumerOffset", e);
                 }
             }
+        }, 1000 * 10, this.queueConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
+    }
 
-            if (MapUtils.isNotEmpty(committedOffsets)) {
-                try (final FileOutputStream fos = new FileOutputStream(committedReadOffsetFile)) {
-                    for (Map.Entry<String, Long> entry :committedOffsets.entrySet()) {
-                        fos.write(String.format("%s:%s",entry.getKey(),entry.getValue()).getBytes(StandardCharsets.UTF_8));
-                        fos.write(newLine.getBytes(StandardCharsets.UTF_8));
+    private static Runnable buildShutdownHook(PermanentQueueManager permanentQueueManager) {
+        return new Runnable() {
+            private volatile boolean hasShutdown = false;
+            private final AtomicInteger shutdownTimes = new AtomicInteger(0);
+
+            @Override
+            public void run() {
+                synchronized (this) {
+                    LOG.info("Shutdown hook was invoked, {}", this.shutdownTimes.incrementAndGet());
+                    if (!this.hasShutdown) {
+                        this.hasShutdown = true;
+                        long beginTime = System.currentTimeMillis();
+                        permanentQueueManager.shutDown();
+                        long consumingTimeTotal = System.currentTimeMillis() - beginTime;
+                        LOG.info("Shutdown hook over, consuming total time(ms): {}", consumingTimeTotal);
                     }
-                    // flush stream
-                    fos.flush();
-                    // actually sync to disk
-                    fos.getFD().sync();
-                } catch (SyncFailedException e) {
-                    LOG.error("Cannot sync " + committedReadOffsetFile.getAbsolutePath() + " to disk. Continuing anyway," +
-                            " but there is no guarantee that the file has been written.", e);
-                } catch (IOException e) {
-                    LOG.error("Cannot write " + committedReadOffsetFile.getAbsolutePath() + " to disk.", e);
                 }
             }
+        };
+    }
 
+    public static class ReadEntry {
 
+        private final byte[] messageBytes;
 
+        private final long offset;
+
+        public ReadEntry(byte[] messageBytes, long offset) {
+            this.messageBytes = messageBytes;
+            this.offset = offset;
+        }
+
+        public long getOffset() {
+            return offset;
+        }
+
+        public byte[] getMessageBytes() {
+            return messageBytes;
         }
     }
 }
