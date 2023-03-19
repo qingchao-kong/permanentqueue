@@ -81,8 +81,8 @@ public class StressTest {
         @Override
         public void work() {
             try {
-//                queueManager.write(topic, (messagePrefix + offset).getBytes(StandardCharsets.UTF_8));
-                offset += 1;
+                queueManager.write(topic, (messagePrefix + offset).getBytes(StandardCharsets.UTF_8));
+                offset++;
                 if (offset % 1000 == 0) {
                     Thread.sleep(500);
                 }
@@ -103,11 +103,12 @@ public class StressTest {
         @Override
         public void work() {
             try {
-                List<PermanentQueueManager.ReadEntry> readEntries = queueManager.read("test", 1000);
+                List<PermanentQueueManager.ReadEntry> readEntries = queueManager.read("test", 100);
                 for (PermanentQueueManager.ReadEntry readEntry : readEntries) {
                     String msg = new String(readEntry.getMessageBytes(), StandardCharsets.UTF_8);
-                    Assertions.assertTrue(msg.startsWith(messagePrefix));
+                    Assertions.assertEquals(messagePrefix + offset, msg);
                     queueManager.commit(topic, readEntry.getOffset());
+                    offset++;
                 }
             } catch (OffsetOutOfRangeException e) {
                 // this is okay
