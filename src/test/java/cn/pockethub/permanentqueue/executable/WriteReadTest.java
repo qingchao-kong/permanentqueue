@@ -1,42 +1,44 @@
 package cn.pockethub.permanentqueue.executable;
 
 import cn.pockethub.permanentqueue.PermanentQueue;
-import cn.pockethub.permanentqueue.PermanentQueueManager;
-import cn.pockethub.permanentqueue.PermanentQueueManagerBuilder;
+import cn.pockethub.permanentqueue.PermanentQueueConfig;
 import cn.pockethub.permanentqueue.Queue;
-import cn.pockethub.permanentqueue.kafka.log.*;
-import cn.pockethub.permanentqueue.kafka.utils.KafkaScheduler;
+import org.apache.rocketmq.common.UtilAll;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.List;
+import java.util.UUID;
 
 public class WriteReadTest {
     private static final Logger LOG = LoggerFactory.getLogger(WriteReadTest.class);
 
     public static void main(String[] args) throws Throwable {
-        PermanentQueueManager queueManager = new PermanentQueueManagerBuilder()
-                .setLogDir(new File("/tmp/permanentQueue-test"))
-                .setInitialDefaultConfig(new LogConfig())
-                .setCleanerConfig(new CleanerConfig())
-                .setScheduler(new KafkaScheduler(2))
+        UUID uuid = UUID.randomUUID();
+        String baseDir = System.getProperty("java.io.tmpdir") + File.separator + "store-" + uuid;
+        PermanentQueueConfig config = new PermanentQueueConfig.Builder()
+                .storePath(baseDir)
                 .build();
-        queueManager.startUp();
+        PermanentQueue permanentQueue = new PermanentQueue(config);
+        permanentQueue.startUp();
 
-        PermanentQueue queue = queueManager.getOrCreatePermanentQueue("test");
-        LOG.info("Initialized log at {}", queueManager.getLogDir());
+        LOG.info("Initialized PermanentQueue at {}", baseDir);
 
-        long offset = queue.write(null, "test".getBytes());
+        long offset = permanentQueue.write("test", "test".getBytes());
         LOG.info("Wrote message offset={}", offset);
 
-        List<Queue.ReadEntry> read = queue.read(null);
+        List<Queue.ReadEntry> read = permanentQueue.read("test", 10);
         for (Queue.ReadEntry readEntry : read) {
-            LOG.info("Read message: \"{}\" (at {})", new String(readEntry.getPayload()), readEntry.getOffset());
+            LOG.info("Read message: \"{}\" (at {})", new String(readEntry.getMessageBytes()), readEntry.getOffset());
             //commit
-            queue.markQueueOffsetCommitted(readEntry.getOffset());
+            permanentQueue.commit("test", readEntry.getOffset());
         }
 
-        queueManager.shutDown();
+        permanentQueue.shutDown();
+        Thread.sleep(10 * 1000);
+
+        File file = new File(baseDir);
+        UtilAll.deleteFile(file);
     }
 }

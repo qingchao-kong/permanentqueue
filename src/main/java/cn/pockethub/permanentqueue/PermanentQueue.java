@@ -1,317 +1,250 @@
 package cn.pockethub.permanentqueue;
 
-import cn.pockethub.permanentqueue.kafka.log.LogAppendInfo;
-import cn.pockethub.permanentqueue.kafka.log.LogConfig;
-import cn.pockethub.permanentqueue.kafka.log.LogSegment;
-import cn.pockethub.permanentqueue.kafka.log.UnifiedLog;
-import cn.pockethub.permanentqueue.kafka.metrics.KafkaMetricsGroup;
-import cn.pockethub.permanentqueue.kafka.server.FetchDataInfo;
-import cn.pockethub.permanentqueue.kafka.server.FetchIsolation;
-import cn.pockethub.permanentqueue.kafka.server.KafkaConfig;
-import com.google.common.collect.Iterables;
-import com.google.common.primitives.Ints;
-import com.yammer.metrics.core.Meter;
-import com.yammer.metrics.core.Timer;
-import com.yammer.metrics.core.TimerContext;
-import lombok.Getter;
-import org.apache.commons.collections4.CollectionUtils;
-import org.apache.kafka.common.errors.OffsetOutOfRangeException;
-import org.apache.kafka.common.record.*;
-import org.apache.kafka.common.utils.Utils;
+import com.google.common.util.concurrent.AbstractIdleService;
+import org.apache.commons.lang3.concurrent.BasicThreadFactory;
+import org.apache.rocketmq.common.BrokerConfig;
+import org.apache.rocketmq.common.message.*;
+import org.apache.rocketmq.store.*;
+import org.apache.rocketmq.store.config.MessageStoreConfig;
+import org.apache.rocketmq.store.stats.BrokerStatsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.Closeable;
-import java.nio.channels.ClosedByInterruptException;
-import java.nio.charset.StandardCharsets;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
-import static cn.pockethub.permanentqueue.Tools.bytesToHex;
-import static cn.pockethub.permanentqueue.kafka.server.FetchIsolation.FetchLogEnd;
-
-public class PermanentQueue extends KafkaMetricsGroup implements Queue {
+public class PermanentQueue extends AbstractIdleService implements Queue {
     private static final Logger LOG = LoggerFactory.getLogger(PermanentQueue.class);
 
-    private static final String metricPrefix = PermanentQueue.class.getName();
+    private static final String PermanentQueue = "PermanentQueue";
 
-    // Metric names, which should be used twice (once in metric startup and once in metric teardown).
-    private static final String TIMER_WRITE_TIME = "writeTime";
-    private static final String TIMER_READ_TIME = "readTime";
-    public static final String METER_WRITTEN_MESSAGES = "writtenMessages";
-    public static final String METER_READ_MESSAGES = "readMessages";
-    private static final String METER_WRITE_DISCARDED_MESSAGES = "writeDiscardedMessages";
+    private static final SocketAddress bornHost = new InetSocketAddress("127.0.0.1", 0);
+    private static final SocketAddress storeHost = bornHost;
 
-    private final String queueName;
-    private PermanentQueueManager manager;
-    private UnifiedLog unifiedLog;
+    private final DefaultMessageStore messageStore;
 
-    @Getter
-    private final AtomicLong committedOffset;
-    private long nextReadOffset;
+    private final ConsumerOffsetManager consumerOffsetManager;
 
-    private final int maxSegmentSize = LogConfig.Defaults.SegmentSize;
-    // Max message size should not be bigger than max segment size.
-    private final int maxMessageSize = Ints.saturatedCast(maxSegmentSize);
+    private final PermanentQueueConfig permanentQueueConfig;
+    private final MessageStoreConfig messageStoreConfig;
 
-    private final Timer writeTime;
-    private final Timer readTime;
-    private final Meter writtenMessages;
-    private final Meter readMessages;
-    private final Meter writeDiscardedMessages;
+    private final ScheduledExecutorService scheduledExecutorService;
 
-    public PermanentQueue(String queueName, PermanentQueueManager manager, UnifiedLog unifiedLog, long committedOffset, long nextReadOffset) {
-        this.queueName = queueName;
-        this.manager = manager;
-        this.unifiedLog = unifiedLog;
-        this.committedOffset = new AtomicLong(committedOffset);
-        this.nextReadOffset = nextReadOffset;
+    private final ConsumerLock consumerLock = new ConsumerLock();
 
-        // Set up metrics
-        this.writeTime = newTimer(metricPrefix + "-" + TIMER_WRITE_TIME, TimeUnit.MILLISECONDS, TimeUnit.MILLISECONDS, new HashMap<String, String>() {{
-            put("queueName", queueName);
-        }});
-        this.readTime = newTimer(metricPrefix + "-" + TIMER_READ_TIME, TimeUnit.MILLISECONDS, TimeUnit.MILLISECONDS, new HashMap<String, String>() {{
-            put("queueName", queueName);
-        }});
-        this.writtenMessages = newMeter(metricPrefix + "-" + METER_WRITTEN_MESSAGES, "entries", TimeUnit.SECONDS, new HashMap<String, String>() {{
-            put("queueName", queueName);
-        }});
-        this.readMessages = newMeter(metricPrefix + "-" + METER_READ_MESSAGES, "entries", TimeUnit.SECONDS, new HashMap<String, String>() {{
-            put("queueName", queueName);
-        }});
-        this.writeDiscardedMessages = newMeter(metricPrefix + "-" + METER_WRITE_DISCARDED_MESSAGES, "entries", TimeUnit.SECONDS, new HashMap<String, String>() {{
-            put("queueName", queueName);
-        }});
+    private volatile boolean shutdown = false;
+
+    public PermanentQueue(PermanentQueueConfig permanentQueueConfig) throws Throwable {
+        this.permanentQueueConfig = permanentQueueConfig;
+
+        this.messageStoreConfig = new MessageStoreConfig();
+        messageStoreConfig.setStorePathRootDir(permanentQueueConfig.getStorePath());
+        messageStoreConfig.setHaListenPort(0);
+        messageStoreConfig.setMaxTransferCountOnMessageInDisk(1024);
+        messageStoreConfig.setMaxTransferCountOnMessageInMemory(1024);
+
+        this.messageStore = new DefaultMessageStore(
+                messageStoreConfig,
+                new BrokerStatsManager(PermanentQueue, true),
+                (topic, queueId, logicOffset, tagsCode, msgStoreTime, filterBitMap, properties) -> {
+                },
+                new BrokerConfig()
+        );
+
+        this.consumerOffsetManager = new ConsumerOffsetManager(this);
+
+        this.scheduledExecutorService = new ScheduledThreadPoolExecutor(1,
+                new BasicThreadFactory.Builder()
+                        .namingPattern("PermanentQueueScheduledThread")
+                        .daemon(true)
+                        .build()
+        );
     }
 
     @Override
-    public Entry createEntry(byte[] idBytes, byte[] messageBytes) {
-        return new Entry(idBytes, messageBytes);
+    public void startUp() throws Exception {
+        LOG.info("---------------------------------------- PermanentQueue start up ----------------------------------------");
+        consumerOffsetManager.load();
+        messageStore.load();
+        messageStore.start();
+        initializeScheduledTasks();
+        Runtime.getRuntime().addShutdownHook(new Thread(buildShutdownHook(this)));
+        LOG.info("---------------------------------------- PermanentQueue start success ----------------------------------------");
     }
 
-    /**
-     * Writes the list of entries to the permanentQueue.
-     *
-     * @param entries permanentQueue entries to be written
-     * @return the last position written to in the permanentQueue
-     */
     @Override
-    public long write(List<Entry> entries) {
-        TimerContext ignored = writeTime.time();
+    public void shutDown() {
+        LOG.info("---------------------------------------- PermanentQueue shutdown ----------------------------------------");
+        shutdown = true;
+
+        if (Objects.nonNull(consumerOffsetManager)) {
+            consumerOffsetManager.persist();
+        }
+
+        if (Objects.nonNull(scheduledExecutorService)) {
+            scheduledExecutorService.shutdown();
+        }
+
+        if (Objects.nonNull(messageStore)) {
+            messageStore.flush();
+            messageStore.shutdown();
+        }
+
+        LOG.info("---------------------------------------- PermanentQueue shutdown success ----------------------------------------");
+    }
+
+    @Override
+    public long write(String topic, byte[] messageBytes) throws QueueException {
+        if (shutdown) {
+            throw new QueueException("PermanentQueue has shutdown!");
+        }
+
+        MessageExtBrokerInner msg = new MessageExtBrokerInner();
+        msg.setTopic(topic);
+        msg.setBody(messageBytes);
+        msg.setQueueId(0);
+        msg.setSysFlag(0);
+        msg.setBornTimestamp(System.currentTimeMillis());
+        msg.setStoreHost(storeHost);
+        msg.setBornHost(bornHost);
+        MessageAccessor.putProperty(msg, MessageConst.PROPERTY_INNER_NUM, String.valueOf(-1));
+        msg.setPropertiesString(MessageDecoder.messageProperties2String(msg.getProperties()));
+        MessageAccessor.clearProperty(msg, MessageConst.PROPERTY_INNER_NUM);
+
+        PutMessageResult putMessageResult = messageStore.putMessage(msg);
+        if (putMessageResult.isOk()) {
+            return putMessageResult.getAppendMessageResult().getLogicsOffset();
+        } else {
+            return -1;
+        }
+    }
+
+    @Override
+    public long write(String topic, List<byte[]> batchMessageBytes) throws QueueException {
+        if (shutdown) {
+            throw new QueueException("PermanentQueue has shutdown!");
+        }
+
+        List<Message> messages = new ArrayList<>();
+        for (byte[] messageBytes : batchMessageBytes) {
+            Message msg = new Message();
+            msg.setBody(messageBytes);
+            msg.setTopic(topic);
+            messages.add(msg);
+        }
+        byte[] batchMessageBody = MessageDecoder.encodeMessages(messages);
+        MessageExtBatch messageExtBatch = new MessageExtBatch();
+        messageExtBatch.setTopic(topic);
+        messageExtBatch.setQueueId(0);
+        messageExtBatch.setBody(batchMessageBody);
+        messageExtBatch.setBornTimestamp(System.currentTimeMillis());
+        messageExtBatch.setStoreHost(storeHost);
+        messageExtBatch.setBornHost(bornHost);
+
+        PutMessageResult putMessageResult = messageStore.putMessages(messageExtBatch);
+        if (putMessageResult.isOk()) {
+            return putMessageResult.getAppendMessageResult().getLogicsOffset();
+        } else {
+            return -1;
+        }
+    }
+
+    @Override
+    public List<Queue.ReadEntry> read(String topic, int maxMsgNums) {
+        if (shutdown) {
+            return new ArrayList<>(0);
+        }
+
+        List<Queue.ReadEntry> readEntries = new ArrayList<>();
+
+        GetMessageResult getMessageResult = null;
+        consumerLock.lock(topic);
         try {
-            long payloadSize = 0L;
-            long messageSetSize = 0L;
-            long lastWriteOffset = 0L;
+            long nextReadOffset = consumerOffsetManager.getNextReadOffset(topic);
+            getMessageResult = messageStore.getMessage(topic, topic, 0, nextReadOffset, maxMsgNums, null);
+            long offset = -1;
+            for (SelectMappedBufferResult selectMappedBufferResult : getMessageResult.getMessageMapedList()) {
+                MessageExt messageExt = MessageDecoder.decode(selectMappedBufferResult.getByteBuffer());
+                readEntries.add(new Queue.ReadEntry(messageExt.getBody(), messageExt.getQueueOffset()));
+                offset = messageExt.getQueueOffset();
+            }
+            if (offset >= 0) {
+                consumerOffsetManager.setNextReadOffset(topic, offset + 1);
+            }
+        } catch (Throwable throwable) {
+            LOG.error("Decode message error.", throwable);
+        } finally {
+            consumerLock.unlock(topic);
+            if (null != getMessageResult) {
+                getMessageResult.release();
+            }
+        }
 
-            final List<SimpleRecord> records = new ArrayList<>(entries.size());
-            for (final Entry entry : entries) {
-                final byte[] messageBytes = entry.getMessageBytes();
-                final byte[] idBytes = entry.getIdBytes();
+        return readEntries;
+    }
 
-                payloadSize += messageBytes.length;
+    @Override
+    public void commit(String topic, long offset) throws QueueException {
+        if (shutdown) {
+            throw new QueueException("PermanentQueue has shutdown!");
+        }
 
-                final SimpleRecord simpleRecord = new SimpleRecord(idBytes, messageBytes);
-                // Calculate the size of the new message in the message set by including the overhead for the log entry.
-                int newMessageSize = MemoryRecords.estimateSizeInBytes(RecordBatch.CURRENT_MAGIC_VALUE, CompressionType.NONE, Collections.singletonList(simpleRecord));
+        consumerOffsetManager.commitOffset(topic, offset);
+    }
 
-
-                if (newMessageSize > maxMessageSize) {
-                    writeDiscardedMessages.mark();
-                    LOG.warn("Message with ID <{}> is too large to store in permanentQueue, skipping! (size: {} bytes / max: {} bytes)",
-                            new String(idBytes, StandardCharsets.UTF_8), newMessageSize, maxMessageSize);
-                    payloadSize = 0;
-                    continue;
+    private void initializeScheduledTasks() {
+        this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    PermanentQueue.this.consumerOffsetManager.persist();
+                } catch (Throwable e) {
+                    LOG.error("permanentQueue: failed to persist config file of consumerOffset", e);
                 }
+            }
+        }, 1000, this.permanentQueueConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
+    }
 
-                // If adding the new message to the message set would overflow the max segment size, flush the current
-                // list of message to avoid a MessageSetSizeTooLargeException.
-                if ((messageSetSize + newMessageSize) > maxSegmentSize) {
-                    if (LOG.isDebugEnabled()) {
-                        LOG.debug("Flushing {} bytes message set with {} messages to avoid overflowing segment with max size of {} bytes",
-                                messageSetSize, records.size(), maxSegmentSize);
+    private static Runnable buildShutdownHook(PermanentQueue permanentQueue) {
+        return new Runnable() {
+            private volatile boolean hasShutdown = false;
+            private final AtomicInteger shutdownTimes = new AtomicInteger(0);
+
+            @Override
+            public void run() {
+                synchronized (this) {
+                    LOG.info("PermanentQueue shutdown hook was invoked, {}", this.shutdownTimes.incrementAndGet());
+                    if (!this.hasShutdown) {
+                        this.hasShutdown = true;
+                        long beginTime = System.currentTimeMillis();
+                        permanentQueue.shutDown();
+                        long consumingTimeTotal = System.currentTimeMillis() - beginTime;
+                        LOG.info("PermanentQueue shutdown hook over, consuming total time(ms): {}", consumingTimeTotal);
                     }
-                    lastWriteOffset = flushMessages(records, payloadSize);
-                    // Reset the messages list and size counters to start a new batch.
-                    records.clear();
-                    messageSetSize = 0;
-                    payloadSize = 0;
-                }
-                records.add(simpleRecord);
-                messageSetSize += newMessageSize;
-
-                if (LOG.isTraceEnabled()) {
-                    LOG.trace("Message {} contains bytes {}", bytesToHex(idBytes), bytesToHex(messageBytes));
                 }
             }
-
-            // Flush the rest of the messages.
-            if (records.size() > 0) {
-                lastWriteOffset = flushMessages(records, payloadSize);
-            }
-
-            return lastWriteOffset;
-        } finally {
-            ignored.stop();
-        }
+        };
     }
 
-    private long flushMessages(List<SimpleRecord> records, long payloadSize) {
-        if (CollectionUtils.isEmpty(records)) {
-            LOG.debug("No messages to flush, not trying to write an empty message set.");
-            return -1L;
-        }
-
-        MemoryRecords memoryRecords = MemoryRecords.withRecords(CompressionType.NONE, records.toArray(new SimpleRecord[0]));
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Trying to write ByteBufferMessageSet with size of {} bytes to permanentQueue", memoryRecords.sizeInBytes());
-        }
-
-        final LogAppendInfo appendInfo = unifiedLog.appendAsLeader(memoryRecords, 1);
-        long lastWriteOffset = appendInfo.getLastOffset();
-
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("Wrote {} messages to permanentQueue: {} bytes (payload {} bytes), log position {} to {}",
-                    records.size(), memoryRecords.sizeInBytes(), payloadSize, appendInfo.getFirstOffset(), lastWriteOffset);
-        }
-        writtenMessages.mark(records.size());
-
-        return lastWriteOffset;
+    public MessageStoreConfig getMessageStoreConfig() {
+        return messageStoreConfig;
     }
 
-    /**
-     * Writes a single message to the permanentQueue and returns the new write position
-     *
-     * @param idBytes      byte array congaing the message id
-     * @param messageBytes encoded message payload
-     * @return the last position written to in the permanentQueue
-     */
-    @Override
-    public long write(byte[] idBytes, byte[] messageBytes) {
-        Entry entry = createEntry(idBytes, messageBytes);
-        return write(Collections.singletonList(entry));
-    }
+    private static class ConsumerLock {
+        private final ConcurrentMap<String, ReentrantLock> lockMap = new ConcurrentHashMap<>();
 
-    /**
-     * @param maxLength The maximum number of bytes to read
-     * @return
-     */
-    @Override
-    public List<ReadEntry> read(Integer maxLength) {
-        if (null == maxLength || maxLength <= 0) {
-            maxLength = KafkaConfig.Defaults.FetchMaxBytes;
+        public void lock(String topic) {
+            lockMap.computeIfAbsent(topic, k -> new ReentrantLock())
+                    .lock();
         }
-        return read(nextReadOffset, maxLength);
-    }
 
-    private List<ReadEntry> read(long readOffset, int maxLength) {
-        if (manager.isShuttingDown()) {
-            return Collections.emptyList();
+        public void unlock(String topic) {
+            lockMap.get(topic)
+                    .unlock();
         }
-        final List<ReadEntry> messages = new ArrayList<>();
-        TimerContext ignored = readTime.time();
-        try {
-            final long logStartOffset = getLogStartOffset();
-
-            if (readOffset < logStartOffset) {
-                LOG.info("Read offset {} before start of log at {}, starting to read from the beginning of the permanentQueue.", readOffset, logStartOffset);
-                readOffset = logStartOffset;
-            }
-            LOG.debug("Requesting to read a maximum of {} bytes messages from the permanentQueue, readOffset:{}", maxLength, readOffset);
-
-            // TODO benchmark and make read-ahead strategy configurable for performance tuning
-            FetchDataInfo fetchDataInfo = unifiedLog.read(readOffset, maxLength, FetchLogEnd, false);
-
-            Iterator<Record> iterator = fetchDataInfo.getRecords().records().iterator();
-            long firstOffset = Long.MIN_VALUE;
-            long lastOffset = Long.MIN_VALUE;
-            long totalBytes = 0;
-            while (iterator.hasNext()) {
-                final Record record = iterator.next();
-
-                if (firstOffset == Long.MIN_VALUE) {
-                    firstOffset = record.offset();
-                }
-                // always remember the last seen offset for debug purposes below
-                lastOffset = record.offset();
-
-                final byte[] payloadBytes = Utils.readBytes(record.value());
-                if (LOG.isTraceEnabled()) {
-                    final byte[] keyBytes = Utils.readBytes(record.key());
-                    LOG.trace("Read message {} contains {}", bytesToHex(keyBytes), bytesToHex(payloadBytes));
-                }
-                totalBytes += payloadBytes.length;
-                messages.add(new ReadEntry(payloadBytes, record.offset()));
-                // remember where to read from
-                nextReadOffset = record.offset() + 1;
-            }
-            if (messages.isEmpty()) {
-                LOG.debug("No messages available to read for readOffset:{}.", readOffset);
-            } else {
-                LOG.debug(
-                        "Read {} messages, total payload size {}, from permanentQueue, offset interval [{}, {}], requested read at {}",
-                        messages.size(),
-                        totalBytes,
-                        firstOffset,
-                        lastOffset,
-                        readOffset);
-            }
-        } catch (OffsetOutOfRangeException e) {
-            // This is fine, the reader tries to read faster than the writer committed data. Next read will get the data.
-            LOG.debug("Offset out of range, no messages available starting at offset {}", readOffset);
-        } catch (Exception e) {
-            // the scala code does not declare the IOException in kafkaLog.read() so we can't catch it here
-            // sigh.
-            if (manager.isShuttingDown()) {
-                LOG.debug("Caught exception during shutdown, ignoring it because we might have been blocked on a read.");
-                return Collections.emptyList();
-            }
-            //noinspection ConstantConditions
-            if (e instanceof ClosedByInterruptException) {
-                LOG.debug("Interrupted while reading from permanentQueue, during shutdown this is harmless and ignored.", e);
-            } else {
-                throw e;
-            }
-        } finally {
-            ignored.stop();
-        }
-        readMessages.mark(messages.size());
-        return messages;
-    }
-
-    /**
-     * Returns the first valid offset in the entire permanentQueue.
-     *
-     * @return first offset
-     */
-    public long getLogStartOffset() {
-        Collection<LogSegment> logSegments = unifiedLog.logSegments();
-        final LogSegment segment = Iterables.getFirst(logSegments, null);
-        if (segment == null) {
-            return 0;
-        }
-        return segment.getBaseOffset();
-    }
-
-    /**
-     * Upon fully processing, and persistently storing, a batch of messages, the system should mark the message with the
-     * highest offset as committed. A background job will write the last position to disk periodically.
-     *
-     * @param offset the offset of the latest committed message
-     */
-    @Override
-    public void markQueueOffsetCommitted(long offset) {
-        long prev;
-        // the caller will not care about offsets going backwards, so we need to make sure we don't backtrack
-        int i = 0;
-        do {
-            prev = committedOffset.get();
-            // at least warn if this spins often, that would be a sign of very high contention, which should not happen
-            if (++i % 10 == 0) {
-                LOG.warn("Committing permanentQueue offset spins {} times now, this might be a bug. Continuing to try update.", i);
-            }
-        } while (!committedOffset.compareAndSet(prev, Math.max(offset, prev)));
     }
 }

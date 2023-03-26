@@ -4,46 +4,29 @@ import java.util.List;
 
 public interface Queue {
 
-    Entry createEntry(byte[] idBytes, byte[] messageBytes);
+    long write(String topic, byte[] messageBytes) throws QueueException;
 
-    long write(List<Entry> entries);
-
-    long write(byte[] idBytes, byte[] messageBytes);
+    long write(String topic, List<byte[]> batchMessageBytes) throws QueueException;
 
     /**
+     * Query at most <code>maxMsgNums</code> messages belonging to <code>topic</code> starting from given <code>offset</code>.
      *
-     * @param maxLength The maximum number of bytes to read
+     * @param topic
+     * @param maxMsgNums Maximum count of messages to query.
      * @return
      */
-    List<ReadEntry> read(Integer maxLength);
+    List<ReadEntry> read(String topic, int maxMsgNums) throws QueueException;
 
-    void markQueueOffsetCommitted(long offset);
-
-    class Entry {
-        private final byte[] idBytes;
-        private final byte[] messageBytes;
-
-        public Entry(byte[] idBytes, byte[] messageBytes) {
-            this.idBytes = idBytes;
-            this.messageBytes = messageBytes;
-        }
-
-        public byte[] getIdBytes() {
-            return idBytes;
-        }
-
-        public byte[] getMessageBytes() {
-            return messageBytes;
-        }
-    }
+    void commit(String topic, long offset) throws QueueException;
 
     class ReadEntry {
 
-        private final byte[] payload;
+        private final byte[] messageBytes;
+
         private final long offset;
 
-        public ReadEntry(byte[] payload, long offset) {
-            this.payload = payload;
+        public ReadEntry(byte[] messageBytes, long offset) {
+            this.messageBytes = messageBytes;
             this.offset = offset;
         }
 
@@ -51,8 +34,8 @@ public interface Queue {
             return offset;
         }
 
-        public byte[] getPayload() {
-            return payload;
+        public byte[] getMessageBytes() {
+            return messageBytes;
         }
     }
 }
