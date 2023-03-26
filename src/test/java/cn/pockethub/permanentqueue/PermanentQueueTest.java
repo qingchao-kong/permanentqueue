@@ -33,11 +33,6 @@ public class PermanentQueueTest {
     }
 
     @Test
-    public void writeMessageTest() {
-
-    }
-
-    @Test
     public void writeAndReadTest() throws Throwable {
         int failCount = 0;
         for (int i = 0; i < 100; i++) {
