@@ -46,7 +46,6 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <junit.version>5.8.2</junit.version>
         <bouncycastle.version>1.70</bouncycastle.version>
-        <slf4j.version>2.0.6</slf4j.version>
         <rocketmq-logging.version>1.0.1</rocketmq-logging.version>
     </properties>
 

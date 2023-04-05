@@ -18,7 +18,6 @@ package cn.pockethub.permanentqueue;
 
 import com.alibaba.fastjson.annotation.JSONField;
 import org.apache.rocketmq.common.ConfigManager;
-import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
@@ -30,7 +29,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class ConsumerOffsetManager extends ConfigManager {
-    private static final Logger LOG = LoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
+    private static final Logger LOG = LoggerFactory.getLogger(ConsumerOffsetManager.class);
 
     private ConcurrentMap<String/*topic*/, AtomicLong> committedOffsetTable = new ConcurrentHashMap<>();
 

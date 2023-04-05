@@ -4,11 +4,11 @@ import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.rocketmq.common.BrokerConfig;
 import org.apache.rocketmq.common.message.*;
+import org.apache.rocketmq.logging.org.slf4j.Logger;
+import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.store.*;
 import org.apache.rocketmq.store.config.MessageStoreConfig;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class PermanentQueue extends AbstractIdleService implements Queue {
-    private static final Logger LOG = LoggerFactory.getLogger(PermanentQueue.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(PermanentQueue.class);
 
     private static final String PermanentQueue = "PermanentQueue";
 
@@ -67,18 +67,18 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
 
     @Override
     public void startUp() throws Exception {
-        LOG.info("---------------------------------------- PermanentQueue start up ----------------------------------------");
+        LOGGER.info("---------------------------------------- PermanentQueue start up ----------------------------------------");
         consumerOffsetManager.load();
         messageStore.load();
         messageStore.start();
         initializeScheduledTasks();
         Runtime.getRuntime().addShutdownHook(new Thread(buildShutdownHook(this)));
-        LOG.info("---------------------------------------- PermanentQueue start success ----------------------------------------");
+        LOGGER.info("---------------------------------------- PermanentQueue start success ----------------------------------------");
     }
 
     @Override
     public void shutDown() {
-        LOG.info("---------------------------------------- PermanentQueue shutdown ----------------------------------------");
+        LOGGER.info("---------------------------------------- PermanentQueue shutdown ----------------------------------------");
         shutdown = true;
 
         if (Objects.nonNull(consumerOffsetManager)) {
@@ -94,7 +94,7 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
             messageStore.shutdown();
         }
 
-        LOG.info("---------------------------------------- PermanentQueue shutdown success ----------------------------------------");
+        LOGGER.info("---------------------------------------- PermanentQueue shutdown success ----------------------------------------");
     }
 
     @Override
@@ -176,7 +176,7 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
                 consumerOffsetManager.setNextReadOffset(topic, offset + 1);
             }
         } catch (Throwable throwable) {
-            LOG.error("Decode message error.", throwable);
+            LOGGER.error("Decode message error.", throwable);
         } finally {
             consumerLock.unlock(topic);
             if (null != getMessageResult) {
@@ -203,7 +203,7 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
                 try {
                     PermanentQueue.this.consumerOffsetManager.persist();
                 } catch (Throwable e) {
-                    LOG.error("permanentQueue: failed to persist config file of consumerOffset", e);
+                    LOGGER.error("permanentQueue: failed to persist config file of consumerOffset", e);
                 }
             }
         }, 1000, this.permanentQueueConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
@@ -217,13 +217,13 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
             @Override
             public void run() {
                 synchronized (this) {
-                    LOG.info("PermanentQueue shutdown hook was invoked, {}", this.shutdownTimes.incrementAndGet());
+                    LOGGER.info("PermanentQueue shutdown hook was invoked, {}", this.shutdownTimes.incrementAndGet());
                     if (!this.hasShutdown) {
                         this.hasShutdown = true;
                         long beginTime = System.currentTimeMillis();
                         permanentQueue.shutDown();
                         long consumingTimeTotal = System.currentTimeMillis() - beginTime;
-                        LOG.info("PermanentQueue shutdown hook over, consuming total time(ms): {}", consumingTimeTotal);
+                        LOGGER.info("PermanentQueue shutdown hook over, consuming total time(ms): {}", consumingTimeTotal);
                     }
                 }
             }
