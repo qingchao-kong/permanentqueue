@@ -163,6 +163,36 @@
         </sift>
     </appender>
 
+    <appender name="PermanentQueueSiftingAppender" class="ch.qos.logback.classic.sift.SiftingAppender">
+        <discriminator>
+            <key>PermanentQueueLogDir</key>
+            <defaultValue>${file.separator}</defaultValue>
+        </discriminator>
+        <sift>
+            <appender name="PermanentQueueAppender"
+                      class="ch.qos.logback.core.rolling.RollingFileAppender">
+                <file>
+                    ${user.home}${file.separator}logs${file.separator}permanentqueuelogs${brokerLogDir:-${file.separator}}${PermanentQueueLogDir}${file.separator}permanentqueue.log
+                </file>
+                <append>true</append>
+                <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+                    <fileNamePattern>
+                        ${user.home}${file.separator}logs${file.separator}rocketmqlogs${brokerLogDir:-${file.separator}}${PermanentQueueLogDir}${file.separator}otherdays${file.separator}permanentqueue.%i.log.gz
+                    </fileNamePattern>
+                    <minIndex>1</minIndex>
+                    <maxIndex>10</maxIndex>
+                </rollingPolicy>
+                <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+                    <maxFileSize>128MB</maxFileSize>
+                </triggeringPolicy>
+                <encoder>
+                    <pattern>%d{yyy-MM-dd HH:mm:ss,GMT+8} %p %t %logger{35} - %m%n</pattern>
+                    <charset class="java.nio.charset.Charset">UTF-8</charset>
+                </encoder>
+            </appender>
+        </sift>
+    </appender>
+
     <appender name="RocketmqTieredStoreSiftingAppender" class="ch.qos.logback.classic.sift.SiftingAppender">
         <discriminator>
             <key>brokerContainerLogDir</key>
@@ -455,7 +485,7 @@
 
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyy-MM-dd HH:mm:ss,GMT+8} %p %t - %m%n</pattern>
+            <pattern>%d{yyy-MM-dd HH:mm:ss,GMT+8} %p %t %logger{35} - %m%n</pattern>
             <charset class="java.nio.charset.Charset">UTF-8</charset>
         </encoder>
     </appender>
@@ -478,6 +508,11 @@
 
     <logger name="RocketmqStore" additivity="false" level="INFO">
         <appender-ref ref="RocketmqStoreSiftingAppender"/>
+    </logger>
+
+    <logger name="cn.pockethub.permanentqueue" additivity="false" level="INFO">
+        <appender-ref ref="PermanentQueueSiftingAppender"/>
+        <appender-ref ref="STDOUT"/>
     </logger>
 
     <logger name="RocketmqStoreError" additivity="false" level="INFO">
