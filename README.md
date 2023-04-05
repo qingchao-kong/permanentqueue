@@ -6,7 +6,7 @@ Permanent Queue
 
 基于 [Apache RocketMQ](https://rocketmq.apache.org/) DefaultMessageStore 实现的 Java 本地持久化队列.
 
-https://zhuanlan.zhihu.com/p/609396573
+https://zhuanlan.zhihu.com/p/619687732
 
 ## Background
 
