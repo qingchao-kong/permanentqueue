@@ -17,6 +17,8 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
 
+import static org.apache.rocketmq.common.sysflag.MessageSysFlag.TRANSACTION_NOT_TYPE;
+
 public class PermanentQueue extends AbstractIdleService implements Queue {
     private static final Logger LOGGER = LoggerFactory.getLogger(PermanentQueue.class);
 
@@ -107,13 +109,12 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
         msg.setTopic(topic);
         msg.setBody(messageBytes);
         msg.setQueueId(0);
-        msg.setSysFlag(0);
+        //非事务消息
+        msg.setSysFlag(TRANSACTION_NOT_TYPE);
         msg.setBornTimestamp(System.currentTimeMillis());
         msg.setStoreHost(storeHost);
         msg.setBornHost(bornHost);
-        MessageAccessor.putProperty(msg, MessageConst.PROPERTY_INNER_NUM, String.valueOf(-1));
-        msg.setPropertiesString(MessageDecoder.messageProperties2String(msg.getProperties()));
-        MessageAccessor.clearProperty(msg, MessageConst.PROPERTY_INNER_NUM);
+        msg.setTags("t");
 
         PutMessageResult putMessageResult = messageStore.putMessage(msg);
         if (putMessageResult.isOk()) {
@@ -140,10 +141,13 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
         MessageExtBatch messageExtBatch = new MessageExtBatch();
         messageExtBatch.setTopic(topic);
         messageExtBatch.setQueueId(0);
+        //非事务消息
+        messageExtBatch.setSysFlag(TRANSACTION_NOT_TYPE);
         messageExtBatch.setBody(batchMessageBody);
         messageExtBatch.setBornTimestamp(System.currentTimeMillis());
         messageExtBatch.setStoreHost(storeHost);
         messageExtBatch.setBornHost(bornHost);
+        messageExtBatch.setTags("t");
 
         PutMessageResult putMessageResult = messageStore.putMessages(messageExtBatch);
         if (putMessageResult.isOk()) {
