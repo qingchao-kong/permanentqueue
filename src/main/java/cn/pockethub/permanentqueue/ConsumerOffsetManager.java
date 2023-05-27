@@ -21,6 +21,7 @@ import org.apache.rocketmq.common.ConfigManager;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
 import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
+import org.apache.rocketmq.store.config.MessageStoreConfig;
 
 import java.io.File;
 import java.util.*;
@@ -37,12 +38,14 @@ public class ConsumerOffsetManager extends ConfigManager {
     private ConcurrentMap<String/*topic*/, Long> nextReadOffsetTable = new ConcurrentHashMap<>();
 
     protected transient PermanentQueue permanentQueue;
+    private transient MessageStoreConfig messageStoreConfig;
 
     public ConsumerOffsetManager() {
     }
 
-    public ConsumerOffsetManager(PermanentQueue permanentQueue) {
+    public ConsumerOffsetManager(PermanentQueue permanentQueue, MessageStoreConfig messageStoreConfig) {
         this.permanentQueue = permanentQueue;
+        this.messageStoreConfig = messageStoreConfig;
     }
 
     public void commitOffset(final String topic, final long offset) {
@@ -82,7 +85,7 @@ public class ConsumerOffsetManager extends ConfigManager {
 
     @Override
     public String configFilePath() {
-        return this.permanentQueue.getMessageStoreConfig().getStorePathRootDir() + File.separator + "config" + File.separator + "consumerOffset.json";
+        return messageStoreConfig.getStorePathRootDir() + File.separator + "config" + File.separator + "consumerOffset.json";
     }
 
     @Override

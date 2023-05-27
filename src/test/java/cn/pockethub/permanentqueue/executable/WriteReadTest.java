@@ -35,6 +35,9 @@ public class WriteReadTest {
             permanentQueue.commit("test", readEntry.getOffset());
         }
 
+        permanentQueue.getDiskPartitionSpaceUsedPercent();
+        permanentQueue.getDiskPartitionTotalSpace();
+
         permanentQueue.shutDown();
         Thread.sleep(10 * 1000);
 

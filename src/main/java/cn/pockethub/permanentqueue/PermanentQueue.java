@@ -3,6 +3,7 @@ package cn.pockethub.permanentqueue;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
 import org.apache.rocketmq.common.BrokerConfig;
+import org.apache.rocketmq.common.UtilAll;
 import org.apache.rocketmq.common.message.*;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
@@ -30,6 +31,8 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
     private final DefaultMessageStore messageStore;
 
     private final ConsumerOffsetManager consumerOffsetManager;
+    private final BrokerStatsManager brokerStatsManager;
+    private final BrokerConfig brokerConfig;
 
     private final PermanentQueueConfig permanentQueueConfig;
     private final MessageStoreConfig messageStoreConfig;
@@ -49,15 +52,20 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
         messageStoreConfig.setMaxTransferCountOnMessageInDisk(1024);
         messageStoreConfig.setMaxTransferCountOnMessageInMemory(1024);
 
+        this.brokerConfig = new BrokerConfig();
+        brokerConfig.setBrokerClusterName(PermanentQueue);
+        brokerConfig.setEnableDetailStat(true);
+        this.brokerStatsManager = new BrokerStatsManager(brokerConfig);
+
         this.messageStore = new DefaultMessageStore(
                 messageStoreConfig,
-                new BrokerStatsManager(PermanentQueue, true),
+                brokerStatsManager,
                 (topic, queueId, logicOffset, tagsCode, msgStoreTime, filterBitMap, properties) -> {
                 },
-                new BrokerConfig()
+                brokerConfig
         );
 
-        this.consumerOffsetManager = new ConsumerOffsetManager(this);
+        this.consumerOffsetManager = new ConsumerOffsetManager(this, messageStoreConfig);
 
         this.scheduledExecutorService = new ScheduledThreadPoolExecutor(1,
                 new BasicThreadFactory.Builder()
@@ -74,6 +82,7 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
         messageStore.load();
         messageStore.start();
         initializeScheduledTasks();
+//        brokerStatsManager.start();
         Runtime.getRuntime().addShutdownHook(new Thread(buildShutdownHook(this)));
         LOGGER.info("---------------------------------------- PermanentQueue start success ----------------------------------------");
     }
@@ -95,6 +104,10 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
             messageStore.flush();
             messageStore.shutdown();
         }
+
+//        if (Objects.nonNull(brokerStatsManager)) {
+//            brokerStatsManager.shutdown();
+//        }
 
         LOGGER.info("---------------------------------------- PermanentQueue shutdown success ----------------------------------------");
     }
@@ -200,6 +213,24 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
         consumerOffsetManager.commitOffset(topic, offset);
     }
 
+    /**
+     * 不要频繁调用，建议一分钟调用一次
+     *
+     * @return
+     */
+    public double getDiskPartitionSpaceUsedPercent() {
+        return UtilAll.getDiskPartitionSpaceUsedPercent(messageStoreConfig.getStorePathRootDir());
+    }
+
+    /**
+     * 不要频繁调用，建议一分钟调用一次
+     *
+     * @return
+     */
+    public long getDiskPartitionTotalSpace() {
+        return UtilAll.getDiskPartitionTotalSpace(messageStoreConfig.getStorePathRootDir());
+    }
+
     private void initializeScheduledTasks() {
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -232,10 +263,6 @@ public class PermanentQueue extends AbstractIdleService implements Queue {
                 }
             }
         };
-    }
-
-    public MessageStoreConfig getMessageStoreConfig() {
-        return messageStoreConfig;
     }
 
     private static class ConsumerLock {
